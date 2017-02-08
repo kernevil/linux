@@ -253,6 +253,7 @@ struct max310x_devtype {
 	int	nr;
 	int	(*detect)(struct device *);
 	void	(*power)(struct uart_port *, int);
+	int (*clksrc)(bool);
 };
 
 struct max310x_one {
@@ -327,6 +328,12 @@ static int max3107_detect(struct device *dev)
 	return 0;
 }
 
+static int max3107_clksrc(bool xtal)
+{
+	return (xtal ? (MAX310X_CLKSRC_CRYST_BIT | MAX310X_CLKSRC_EXTCLK_BIT) :
+		 MAX310X_CLKSRC_EXTCLK_BIT);
+}
+
 static int max3108_detect(struct device *dev)
 {
 	struct max310x_port *s = dev_get_drvdata(dev);
@@ -379,6 +386,11 @@ static void max310x_power(struct uart_port *port, int on)
 		msleep(50);
 }
 
+static int max310x_clksrc(bool xtal)
+{
+	return (xtal ? MAX310X_CLKSRC_CRYST_BIT : MAX310X_CLKSRC_EXTCLK_BIT);
+}
+
 static int max14830_detect(struct device *dev)
 {
 	struct max310x_port *s = dev_get_drvdata(dev);
@@ -415,6 +427,7 @@ static const struct max310x_devtype max3107_devtype = {
 	.nr	= 1,
 	.detect	= max3107_detect,
 	.power	= max310x_power,
+	.clksrc = max3107_clksrc,
 };
 
 static const struct max310x_devtype max3108_devtype = {
@@ -422,6 +435,7 @@ static const struct max310x_devtype max3108_devtype = {
 	.nr	= 1,
 	.detect	= max3108_detect,
 	.power	= max310x_power,
+	.clksrc = max310x_clksrc,
 };
 
 static const struct max310x_devtype max3109_devtype = {
@@ -429,6 +443,7 @@ static const struct max310x_devtype max3109_devtype = {
 	.nr	= 2,
 	.detect	= max3109_detect,
 	.power	= max310x_power,
+	.clksrc = max310x_clksrc,
 };
 
 static const struct max310x_devtype max14830_devtype = {
@@ -436,6 +451,7 @@ static const struct max310x_devtype max14830_devtype = {
 	.nr	= 4,
 	.detect	= max14830_detect,
 	.power	= max14830_power,
+	.clksrc = max310x_clksrc,
 };
 
 static bool max310x_reg_writeable(struct device *dev, unsigned int reg)
@@ -579,7 +595,7 @@ static int max310x_set_ref_clk(struct max310x_port *s, unsigned long freq,
 	}
 
 	/* Configure clock source */
-	clksrc = xtal ? MAX310X_CLKSRC_CRYST_BIT : MAX310X_CLKSRC_EXTCLK_BIT;
+	clksrc = s->devtype->clksrc(xtal);
 
 	/* Configure PLL */
 	if (pllcfg) {
@@ -1171,7 +1187,8 @@ static int max310x_probe(struct device *dev, struct max310x_devtype *devtype,
 	}
 
 	uartclk = max310x_set_ref_clk(s, freq, xtal);
-	dev_dbg(dev, "Reference clock set to %i Hz\n", uartclk);
+	dev_dbg(dev, "Reference clock set to %i Hz (%s)\n", uartclk,
+		xtal ? "xtal" : "osc");
 
 #ifdef CONFIG_GPIOLIB
 	/* Setup GPIO cotroller */
