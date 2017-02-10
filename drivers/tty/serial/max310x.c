@@ -911,9 +911,14 @@ static void max310x_rs_proc(struct work_struct *ws)
 		max310x_port_update(&one->port, MAX310X_MODE1_REG,
 				MAX310X_MODE1_TRNSCVCTRL_BIT,
 				MAX310X_MODE1_TRNSCVCTRL_BIT);
-		max310x_port_update(&one->port, MAX310X_MODE2_REG,
-				MAX310X_MODE2_ECHOSUPR_BIT,
-				MAX310X_MODE2_ECHOSUPR_BIT);
+		if (one->port.rs485.flags & SER_RS485_RX_DURING_TX) {
+			max310x_port_update(&one->port, MAX310X_MODE2_REG,
+					MAX310X_MODE2_ECHOSUPR_BIT, 0);
+		} else {
+			max310x_port_update(&one->port, MAX310X_MODE2_REG,
+					MAX310X_MODE2_ECHOSUPR_BIT,
+					MAX310X_MODE2_ECHOSUPR_BIT);
+		}
 	} else {
 		max310x_port_update(&one->port, MAX310X_MODE1_REG,
 				MAX310X_MODE1_TRNSCVCTRL_BIT, 0);
@@ -931,7 +936,8 @@ static int max310x_rs485_config(struct uart_port *port,
 	    (rs485->delay_rts_after_send > 0x0f))
 		return -ERANGE;
 
-	rs485->flags &= SER_RS485_RTS_ON_SEND | SER_RS485_ENABLED;
+	rs485->flags &= SER_RS485_RTS_ON_SEND | SER_RS485_ENABLED |
+			SER_RS485_RX_DURING_TX;
 	memset(rs485->padding, 0, sizeof(rs485->padding));
 	port->rs485 = *rs485;
 
@@ -975,6 +981,11 @@ static int max310x_startup(struct uart_port *port)
 static void max310x_shutdown(struct uart_port *port)
 {
 	struct max310x_port *s = dev_get_drvdata(port->dev);
+
+	/* Clear RS485 structures */
+	port->rs485.delay_rts_after_send = 0;
+	port->rs485.delay_rts_before_send = 0;
+	port->rs485.flags = 0;
 
 	/* Disable all interrupts */
 	max310x_port_write(port, MAX310X_IRQEN_REG, 0);
