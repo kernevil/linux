@@ -98,7 +98,7 @@ enum {
 	Opt_resilient, Opt_noresilient,
 	Opt_domainauto, Opt_rdma, Opt_modesid, Opt_rootfs,
 	Opt_multichannel, Opt_nomultichannel,
-	Opt_compress,
+	Opt_compress, Opt_witness,
 
 	/* Mount options which take numeric value */
 	Opt_backupuid, Opt_backupgid, Opt_uid,
@@ -272,6 +272,7 @@ static const match_table_t cifs_mount_option_tokens = {
 	{ Opt_ignore, "relatime" },
 	{ Opt_ignore, "_netdev" },
 	{ Opt_rootfs, "rootfs" },
+	{ Opt_witness, "witness" },
 
 	{ Opt_err, NULL }
 };
@@ -1754,6 +1755,13 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
 #ifdef CONFIG_CIFS_ROOT
 			vol->rootfs = true;
 #endif
+			break;
+		case Opt_witness:
+#ifndef CONFIG_CIFS_SWN_UPCALL
+			cifs_dbg(VFS, "Witness support needs CONFIG_CIFS_SWN_UPCALL kernel config option set\n");
+			goto cifs_parse_mount_err;
+#endif
+			vol->witness = true;
 			break;
 		case Opt_posixpaths:
 			vol->posix_paths = 1;
@@ -3375,6 +3383,8 @@ cifs_put_tcon(struct cifs_tcon *tcon)
 		return;
 	}
 
+	/* TODO witness unregister */
+
 	list_del_init(&tcon->tcon_list);
 	spin_unlock(&cifs_tcp_ses_lock);
 
@@ -3535,6 +3545,26 @@ cifs_get_tcon(struct cifs_ses *ses, struct smb_vol *volume_info)
 		}
 		tcon->use_resilient = true;
 	}
+
+#ifdef CONFIG_CIFS_SWN_UPCALL
+	tcon->use_witness = false;
+	if (volume_info->witness) {
+		if (ses->server->vals->protocol_id >= SMB30_PROT_ID) {
+			if (tcon->capabilities & SMB2_SHARE_CAP_CLUSTER) {
+				/* TODO witness register */
+				tcon->use_witness = true;
+			} else {
+				cifs_dbg(VFS, "witness requested on mount but no CLUSTER capability on share\n");
+				rc = -EOPNOTSUPP;
+				goto out_fail;
+			}
+		} else {
+			cifs_dbg(VFS, "SMB3 or later required for witness option\n");
+			rc = -EOPNOTSUPP;
+			goto out_fail;
+		}
+	}
+#endif
 
 	/* If the user really knows what they are doing they can override */
 	if (tcon->share_flags & SMB2_SHAREFLAG_NO_CACHING) {
@@ -5276,6 +5306,9 @@ cifs_construct_tcon(struct cifs_sb_info *cifs_sb, kuid_t fsuid)
 	vol_info->sectype = master_tcon->ses->sectype;
 	vol_info->sign = master_tcon->ses->sign;
 	vol_info->seal = master_tcon->seal;
+#ifdef CONFIG_CIFS_SWN_UPCALL
+	vol_info->witness = master_tcon->use_witness;
+#endif
 
 	rc = cifs_set_vol_auth(vol_info, master_tcon->ses);
 	if (rc) {
