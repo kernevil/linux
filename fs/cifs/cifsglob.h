@@ -619,6 +619,7 @@ struct smb_vol {
 	unsigned int max_channels;
 	__u16 compression; /* compression algorithm 0xFFFF default 0=disabled */
 	bool rootfs:1; /* if it's a SMB root file system */
+	bool witness:1; /* use witness protocol */
 };
 
 /**
@@ -1176,6 +1177,9 @@ struct cifs_tcon {
 	char *dfs_path;
 	int remap:2;
 	struct list_head ulist; /* cache update list */
+#endif
+#ifdef CONFIG_CIFS_SWN_UPCALL
+	bool use_witness:1; /* use witness protocol */
 #endif
 };
 
