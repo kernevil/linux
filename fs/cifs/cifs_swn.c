@@ -534,6 +534,29 @@ static int cifs_swn_client_move(struct cifs_swn_reg *swnreg, struct sockaddr_sto
 	return cifs_swn_reconnect(swnreg->tcon, addr);
 }
 
+static int cifs_swn_share_moved(struct cifs_swn_reg *swnreg, struct sockaddr_storage *addr)
+{
+	struct sockaddr_in *ipv4 = (struct sockaddr_in *)addr;
+	struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)addr;
+
+	if (addr->ss_family == AF_INET)
+		cifs_dbg(FYI, "%s: share '%s' from '%s' moved to %pI4\n",
+				__func__, swnreg->share_name, swnreg->net_name,
+				&ipv4->sin_addr);
+	else if (addr->ss_family == AF_INET6)
+		cifs_dbg(FYI, "%s: share '%s' from '%s' moved to %pI6\n",
+				__func__, swnreg->share_name, swnreg->net_name,
+				&ipv6->sin6_addr);
+
+	/*
+	 * FIXME It is not clear enough how to handle this notification and what does it mean.
+	 * It is received for example when a node belonging to a scale-out file server dies, but
+	 * it is also received as soon as a client registers for notifications (w2k12r2) when the
+	 * share is scale-out and all nodes are working fine. Just log for now.
+	 */
+	return 0;
+}
+
 int cifs_swn_notify(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cifs_swn_reg *swnreg;
@@ -592,6 +615,17 @@ int cifs_swn_notify(struct sk_buff *skb, struct genl_info *info)
 			return -EINVAL;
 		}
 		return cifs_swn_client_move(swnreg, &addr);
+	}
+	case CIFS_SWN_NOTIFICATION_SHARE_MOVE: {
+		struct sockaddr_storage addr;
+
+		if (info->attrs[CIFS_GENL_ATTR_SWN_IP]) {
+			nla_memcpy(&addr, info->attrs[CIFS_GENL_ATTR_SWN_IP], sizeof(addr));
+		} else {
+			cifs_dbg(FYI, "%s: missing IP address attribute\n", __func__);
+			return -EINVAL;
+		}
+		return cifs_swn_share_moved(swnreg, &addr);
 	}
 	default:
 		cifs_dbg(FYI, "%s: unknown notification type %d\n", __func__, type);
